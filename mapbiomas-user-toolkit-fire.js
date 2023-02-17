@@ -13,6 +13,7 @@
  *    1.0.0 - First release
  *    1.1.0 - Collection 1.0 fire
  *    1.2.0 - Collection 1.1 fire
+ *    1.3.0 - Collection  fire_monitor 
  * 
  * @see
  *      Get the MapBiomas exported data in your "Google Drive/MAPBIOMAS-EXPORT" folder
@@ -267,14 +268,14 @@ var App = {
                             "1988_2020", "1987_2020", "1986_2020", "1990_1995",
                             "1995_2000", "2000_2005", "2005_2010", "2010_2015",
                             "1995_2005", "2005_2015", "2000_2015",
-                        ]
+                        ],
                     },
                 },
                 'collection-1.1': {
                     'assets': {
                         'annual_burned_coverage': 'projects/mapbiomas-workspace/public/collection7/mapbiomas-fire-collection1-1-annual-burned-coverage-1',
                         'monthly_burned_coverage': 'projects/mapbiomas-workspace/public/collection7/mapbiomas-fire-collection1-1-monthly-burned-coverage-1',
-                        'fire_frequency': 'projects/mapbiomas-workspace/public/collection7/mapbiomas-fire-collection1-1-fire-frequency-1',
+                        'fire_frequency': 'projects/mapbiomas-workspace/public/collection7/mapbiomas-fire-collection1-1-fire-frequency-1',                        // 'fire_monitor': 'projects/mapbiomas-workspace/FOGO/MONITORAMENTO/collection-fire-monthly-sentinel2-v2',
                     },
 
                     'periods': {
@@ -317,7 +318,16 @@ var App = {
                             "1988_2021", "1987_2021", "1986_2021", "1990_1995",
                             "1995_2000", "2000_2005", "2005_2010", "2010_2015",
                             "1995_2005", "2005_2015", "2000_2015",
-                        ]
+                        ],
+                    },
+                },
+                'collection-fire_monitor': {
+                    'assets': {
+                        'fire_monitor': 'projects/mapbiomas-workspace/FOGO/MONITORAMENTO/collection-fire-monthly-sentinel2-v2',
+                    },
+
+                    'periods': {
+                        'fire_monitor':null,
                     },
                 },
             },
@@ -327,6 +337,7 @@ var App = {
             'annual_burned_coverage': 'burned_coverage_',
             'monthly_burned_coverage': 'burned_coverage_',
             'fire_frequency': 'fire_frequency_',
+            'fire_monitor':'burned_coverage_',
             // 'burned_cover_cumulated': 'cover_',
         },
 
@@ -336,6 +347,8 @@ var App = {
             'annual_burned_coverage': null,
             'monthly_burned_coverage': null,
             'fire_frequency': null,
+            'fire_monitor':null,
+            
             // 'burned_cover_cumulated': null,
         },
 
@@ -343,6 +356,7 @@ var App = {
             'annual_burned_coverage': 256 * 124,
             'monthly_burned_coverage': 256 * 124,
             'fire_frequency': 256 * 124,
+            'fire_monitor': 256 * 124,
             // 'burned_cover_cumulated': 256 * 124,
 
         },
@@ -359,6 +373,10 @@ var App = {
             'fire_frequency': {
                 'min': 1,
                 'max': 36
+            },
+            'fire_monitor': {
+                'min': 0,
+                'max': 1
             },
         },
 
@@ -392,6 +410,9 @@ var App = {
                 '#9f360b',
                 '#810004',
                 '#4d0709'
+            ],
+            'fire_monitor':[
+                '800000'
             ],
         },
 
@@ -466,15 +487,14 @@ var App = {
 
     startMap: function (year) {
 
-        Map.centerObject(App.options.data.annual_burned_coverage, 5);
-
+        Map.centerObject(App.options.data[App.options.dataType], 5);
         var imageLayer = ui.Map.Layer({
-            'eeObject': App.options.data.annual_burned_coverage,
+            'eeObject': App.options.data[App.options.dataType],
             'visParams': {
-                'bands': [App.options.bandsNames.annual_burned_coverage + year],
-                'palette': App.options.palette.annual_burned_coverage,
-                'min': App.options.ranges.annual_burned_coverage.min,
-                'max': App.options.ranges.annual_burned_coverage.max,
+                'bands': [App.options.bandsNames[App.options.dataType] + year],
+                'palette': App.options.palette[App.options.dataType],
+                'min': App.options.ranges[App.options.dataType].min,
+                'max': App.options.ranges[App.options.dataType].max,
                 'format': 'png'
             },
             'name': year,
@@ -544,7 +564,6 @@ var App = {
         },
 
         setDataType: function (dataType) {
-
             App.options.dataType = dataType;
 
         },
@@ -560,21 +579,60 @@ var App = {
                     ee.Number(1).evaluate(
                         function (a) {
 
+                            if (collectioName !== 'collection-fire_monitor') {
+                              App.options.data.annual_burned_coverage = ee.Image(
+                                  App.options.collections[regionName][collectioName].assets.annual_burned_coverage)
+                                  .gt(0).byte();
+  
+                              App.options.data.monthly_burned_coverage = ee.Image(
+                                  App.options.collections[regionName][collectioName].assets.monthly_burned_coverage)
+                                  .divide(100).byte();
+  
+                              App.options.data.fire_frequency = ee.Image(
+                                  App.options.collections[regionName][collectioName].assets.fire_frequency)
+                                  .divide(100).byte();
 
-                            App.options.data.annual_burned_coverage = ee.Image(
-                                App.options.collections[regionName][collectioName].assets.annual_burned_coverage)
-                                .gt(0).byte();
+                            }
+                            // monitor de area queimada sentinel
+                            var fireMonitor = ee.ImageCollection(
+                                App.options.collections[regionName]['collection-fire_monitor'].assets.fire_monitor)
+                                .toBands();
+                            
 
-                            App.options.data.monthly_burned_coverage = ee.Image(
-                                App.options.collections[regionName][collectioName].assets.monthly_burned_coverage)
-                                .divide(100).byte();
+                            var oldBands = fireMonitor.bandNames();
+                            var year_month = oldBands.iterate(function(current,previous){
+                              var newBand = ee.String(current)
+                                .replace('brazil-','')
+                                .replace('_FireMonth','')
+                                .replace('-','_');
+                              
+                              newBand = ee.Algorithms.If({
+                                condition:newBand.length().eq(6),
+                                trueCase:newBand.replace('_','_0'),
+                                falseCase:newBand
+                              });
+                              
+                              return ee.List(previous).add(newBand);
+                            },[]);
+                            
+                            var newBands = ee.List(year_month).map(function(str){return ee.String('burned_coverage_').cat(str)});
+                            
+                            App.options.collections['mapbiomas-brazil']['collection-fire_monitor'].periods.fire_monitor = ee.List(year_month).sort().getInfo();
 
-                            App.options.data.fire_frequency = ee.Image(
-                                App.options.collections[regionName][collectioName].assets.fire_frequency)
-                                .divide(100).byte();
-
-                            var year = App.options.collections[regionName][collectioName].periods.annual_burned_coverage.slice(-1)[0];
-
+                            App.options.data.fire_monitor = fireMonitor
+                              .select(oldBands,newBands)
+                              .gt(0).byte();
+                            
+                            print(App.options.data.fire_monitor)
+                            
+                            //--------------------------------------------
+                            
+                            var dataType = collectioName === 'collection-fire_monitor' ? 'fire_monitor' : 'annual_burned_coverage';
+                            
+                            var year = App.options.collections[regionName][collectioName].periods[dataType].slice(-1)[0];
+                            
+                            App.ui.setDataType(dataType);
+                            
                             App.startMap(year);
 
                             App.ui.loadDataType();
@@ -587,7 +645,9 @@ var App = {
                     'stretch': 'horizontal'
                 }
             });
-
+            
+            // App.ui.form.selectCollection.setValue('collection-1.1');
+            
             App.ui.form.panelCollection.widgets()
                 .set(1, App.ui.form.selectCollection);
 
@@ -1397,7 +1457,8 @@ var App = {
                 'items': [
                     'annual_burned_coverage',
                     'monthly_burned_coverage',
-                    'fire_frequency'
+                    'fire_frequency',
+                    'fire_monitor'
                 ],
                 'placeholder': 'annual_burned_coverage',
                 'style': {
